@@ -277,6 +277,146 @@ const getRecentSalesActivity = async (req, res) => {
   }
 };
 
+// Get product movement analytics (fast and slow moving goods)
+const getProductMovementAnalytics = async (req, res) => {
+  try {
+    const daysBack = parseInt(req.query.days) || 30; // Default to last 30 days
+    const limit = parseInt(req.query.limit) || 5;
+    
+    // Calculate date threshold
+    const dateThreshold = new Date();
+    dateThreshold.setDate(dateThreshold.getDate() - daysBack);
+    
+    // Get all sale items from the specified period with their sales data
+    const salesInPeriod = await Sale.find({
+      date: { $gte: dateThreshold }
+    });
+    
+    const saleIds = salesInPeriod.map(sale => sale._id);
+    
+    // Aggregate sales data by product
+    const productMovement = await SaleItem.aggregate([
+      {
+        $match: {
+          sale_id: { $in: saleIds }
+        }
+      },
+      {
+        $group: {
+          _id: '$product_name',
+          totalQuantitySold: { $sum: '$quantity_sold' },
+          totalRevenue: { $sum: '$amount' },
+          salesCount: { $sum: 1 },
+          avgSellingPrice: { $avg: '$selling_price' },
+          lastSaleDate: { $max: '$sale_id' }
+        }
+      },
+      {
+        $sort: { totalQuantitySold: -1 }
+      }
+    ]);
+
+    // Get last sale dates for each product
+    const productSalesWithDates = await Promise.all(
+      productMovement.map(async (product) => {
+        const lastSale = await Sale.findById(product.lastSaleDate);
+        return {
+          ...product,
+          lastSaleDate: lastSale ? lastSale.date : null
+        };
+      })
+    );
+
+    // Get current stock information for all products
+    const allProducts = await Product.find({});
+    const productBatches = await ProductBatch.find({}).populate('product_id');
+    
+    // Create a map of product stock quantities
+    const stockMap = {};
+    productBatches.forEach(batch => {
+      const productName = batch.product_id.product_name;
+      if (!stockMap[productName]) {
+        stockMap[productName] = 0;
+      }
+      stockMap[productName] += batch.quantity_in_stock;
+    });
+
+    // Enhance product data with stock information and movement rate
+    const enhancedProducts = productSalesWithDates.map(product => {
+      const currentStock = stockMap[product._id] || 0;
+      const movementRate = product.totalQuantitySold / daysBack; // units per day
+      const daysToStockOut = currentStock > 0 && movementRate > 0 ? Math.ceil(currentStock / movementRate) : null;
+      
+      return {
+        productName: product._id,
+        totalQuantitySold: product.totalQuantitySold,
+        totalRevenue: product.totalRevenue,
+        salesCount: product.salesCount,
+        avgSellingPrice: Math.round(product.avgSellingPrice * 100) / 100,
+        currentStock,
+        movementRate: Math.round(movementRate * 100) / 100,
+        daysToStockOut,
+        lastSaleDate: product.lastSaleDate
+      };
+    });
+
+    // Separate fast and slow moving goods
+    const fastMovingGoods = enhancedProducts
+      .filter(product => product.movementRate > 0)
+      .slice(0, limit);
+    
+    const slowMovingGoods = enhancedProducts
+      .filter(product => product.movementRate >= 0)
+      .sort((a, b) => a.movementRate - b.movementRate)
+      .slice(0, limit);
+
+    // Get products with no sales in the period (completely stagnant)
+    const productsWithNoSales = allProducts
+      .filter(product => !enhancedProducts.find(ep => ep.productName === product.product_name))
+      .map(product => ({
+        productName: product.product_name,
+        totalQuantitySold: 0,
+        totalRevenue: 0,
+        salesCount: 0,
+        avgSellingPrice: 0,
+        currentStock: stockMap[product.product_name] || 0,
+        movementRate: 0,
+        daysToStockOut: null,
+        lastSaleDate: null
+      }))
+      .slice(0, Math.max(0, limit - slowMovingGoods.length));
+
+    // Combine slow moving with no-sales products
+    const finalSlowMovingGoods = [...slowMovingGoods, ...productsWithNoSales].slice(0, limit);
+
+    res.json({
+      success: true,
+      data: {
+        period: `${daysBack} days`,
+        dateRange: {
+          from: dateThreshold.toISOString().split('T')[0],
+          to: new Date().toISOString().split('T')[0]
+        },
+        fastMovingGoods,
+        slowMovingGoods: finalSlowMovingGoods,
+        summary: {
+          totalProductsAnalyzed: enhancedProducts.length + productsWithNoSales.length,
+          totalProductsWithSales: enhancedProducts.length,
+          totalProductsWithoutSales: productsWithNoSales.length
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching product movement analytics:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Error fetching product movement analytics', 
+      error: error.message 
+    });
+  }
+};
+
 module.exports = {
   searchProductsForSales,
   createSale,
@@ -284,5 +424,6 @@ module.exports = {
   getSaleById,
   getNextBillNumber,
   debugProducts,
-  getRecentSalesActivity
+  getRecentSalesActivity,
+  getProductMovementAnalytics
 };

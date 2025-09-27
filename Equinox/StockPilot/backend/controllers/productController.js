@@ -759,6 +759,72 @@ const getSuggestedQuantity = async (req, res) => {
   }
 };
 
+// Get inventory statistics for dashboard
+const getInventoryStats = async (req, res) => {
+  try {
+    // Get all product batches with their stock quantities
+    const productBatches = await ProductBatch.find({})
+      .populate('product_id', 'product_name category');
+    
+    // Calculate total quantity in hand
+    const quantityInHand = productBatches.reduce((sum, batch) => {
+      return sum + (batch.quantity_in_stock || 0);
+    }, 0);
+
+    // Get low stock threshold (default 10)
+    const lowStockThreshold = 10;
+    const lowStockBatches = productBatches.filter(batch => 
+      batch.quantity_in_stock <= lowStockThreshold
+    );
+
+    // Get unique products with low stock
+    const lowStockProductIds = [...new Set(lowStockBatches.map(batch => batch.product_id._id.toString()))];
+    const lowStockItems = lowStockProductIds.length;
+
+    // Get pending purchase orders count (quantity to be received)
+    const PurchaseOrder = require('../models/PurchaseOrder');
+    const pendingPurchaseOrders = await PurchaseOrder.find({
+      status: { $in: ['pending', 'confirmed'] }
+    });
+    const quantityToBeReceived = pendingPurchaseOrders.length;
+
+    // Get total vendors count
+    const Vendor = require('../models/Vendors');
+    const totalVendors = await Vendor.countDocuments();
+
+    // Get unique products count
+    const totalProducts = await Product.countDocuments();
+
+    // Calculate total inventory value
+    const totalInventoryValue = productBatches.reduce((sum, batch) => {
+      const batchValue = (batch.quantity_in_stock || 0) * (batch.mrp || 0);
+      return sum + batchValue;
+    }, 0);
+
+    res.json({
+      success: true,
+      data: {
+        quantityInHand,
+        quantityToBeReceived,
+        totalVendors,
+        totalProducts,
+        lowStockItems,
+        totalInventoryValue: Math.round(totalInventoryValue),
+        productBatchesCount: productBatches.length,
+        averageStockPerProduct: totalProducts > 0 ? Math.round(quantityInHand / totalProducts) : 0
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching inventory stats:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Error fetching inventory statistics', 
+      error: error.message 
+    });
+  }
+};
+
 module.exports = {
   searchProducts,
   createProduct,
@@ -768,5 +834,6 @@ module.exports = {
   getInventoryPaginated,
   getCategories,
   getLowStockProducts,
-  getSuggestedQuantity
+  getSuggestedQuantity,
+  getInventoryStats
 };

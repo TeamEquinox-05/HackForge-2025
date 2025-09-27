@@ -7,7 +7,8 @@ const {
   getSaleById,
   getNextBillNumber,
   debugProducts,
-  getRecentSalesActivity
+  getRecentSalesActivity,
+  getProductMovementAnalytics
 } = require('../controllers/salesController');
 
 // Get next auto-incrementing bill number
@@ -15,6 +16,9 @@ router.get('/next-bill-number', getNextBillNumber);
 
 // Get recent sales activity for dashboard
 router.get('/recent-activity', getRecentSalesActivity);
+
+// Get product movement analytics (fast/slow moving goods)
+router.get('/movement-analytics', getProductMovementAnalytics);
 
 // Search products for sales (with stock availability)
 router.get('/search-products', searchProductsForSales);

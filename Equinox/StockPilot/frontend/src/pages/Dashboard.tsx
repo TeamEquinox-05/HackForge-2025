@@ -82,6 +82,33 @@ interface RecentSalesActivity {
   date: string;
 }
 
+interface ProductMovement {
+  productName: string;
+  totalQuantitySold: number;
+  totalRevenue: number;
+  salesCount: number;
+  avgSellingPrice: number;
+  currentStock: number;
+  movementRate: number;
+  daysToStockOut: number | null;
+  lastSaleDate: string | null;
+}
+
+interface ProductMovementAnalytics {
+  period: string;
+  dateRange: {
+    from: string;
+    to: string;
+  };
+  fastMovingGoods: ProductMovement[];
+  slowMovingGoods: ProductMovement[];
+  summary: {
+    totalProductsAnalyzed: number;
+    totalProductsWithSales: number;
+    totalProductsWithoutSales: number;
+  };
+}
+
 interface DashboardStats {
   totalProducts: number;
   lowStockItems: number;
@@ -95,6 +122,7 @@ interface DashboardStats {
   purchaseOrderStats: any;
   recentPurchaseActivity: RecentPurchaseActivity[];
   recentSalesActivity: RecentSalesActivity[];
+  productMovementAnalytics: ProductMovementAnalytics | null;
 }
 
 const Dashboard = () => {
@@ -159,7 +187,9 @@ const Dashboard = () => {
         purchaseStatsResponse,
         purchaseOrderStatsResponse,
         recentPurchaseActivityResponse,
-        recentSalesActivityResponse
+        recentSalesActivityResponse,
+        productMovementResponse,
+        inventoryStatsResponse
       ] = await Promise.all([
         fetch('http://localhost:5000/api/products', { headers }),
         fetch('http://localhost:5000/api/sales', { headers }),
@@ -169,7 +199,9 @@ const Dashboard = () => {
         fetch('http://localhost:5000/api/purchases/stats', { headers }),
         fetch('http://localhost:5000/api/purchase-orders/stats', { headers }),
         fetch('http://localhost:5000/api/purchases/recent-activity?limit=5', { headers }),
-        fetch('http://localhost:5000/api/sales/recent-activity?limit=5', { headers })
+        fetch('http://localhost:5000/api/sales/recent-activity?limit=5', { headers }),
+        fetch('http://localhost:5000/api/sales/movement-analytics?days=30&limit=5', { headers }),
+        fetch('http://localhost:5000/api/products/inventory-stats', { headers })
       ]);
 
       // Parse all responses
@@ -182,7 +214,9 @@ const Dashboard = () => {
         purchaseStatsData,
         purchaseOrderStatsData,
         recentPurchaseActivityData,
-        recentSalesActivityData
+        recentSalesActivityData,
+        productMovementData,
+        inventoryStatsData
       ] = await Promise.all([
         productsResponse.json(),
         salesResponse.json(),
@@ -192,7 +226,9 @@ const Dashboard = () => {
         purchaseStatsResponse.json(),
         purchaseOrderStatsResponse.json(),
         recentPurchaseActivityResponse.json(),
-        recentSalesActivityResponse.json()
+        recentSalesActivityResponse.json(),
+        productMovementResponse.json(),
+        inventoryStatsResponse.json()
       ]);
 
       // Calculate dashboard statistics
@@ -206,15 +242,14 @@ const Dashboard = () => {
         product.stockQuantity <= (product.lowStockThreshold || 10)
       ).length;
 
-      // Calculate total quantities
-      const quantityInHand = products.reduce((sum: number, product: Product) => 
-        sum + (product.stockQuantity || 0), 0
-      );
-
-      // Calculate quantity to be received from pending purchase orders
-      const quantityToBeReceived = purchaseOrdersData?.filter((po: PurchaseOrder) => 
-        po.status === 'pending' || po.status === 'confirmed'
-      ).length || 0;
+      // Use inventory stats from API
+      const inventoryStats = inventoryStatsData?.success ? inventoryStatsData.data : {
+        quantityInHand: 0,
+        quantityToBeReceived: 0,
+        totalVendors: 0,
+        totalInventoryValue: 0,
+        lowStockItems: 0
+      };
 
       // Get recent sales (last 5)
       const recentSales = sales.slice(-5).reverse();
@@ -227,14 +262,15 @@ const Dashboard = () => {
         lowStockItems,
         totalSales: sales.length,
         totalPurchases: purchases.length,
-        totalVendors: vendors.length,
-        quantityInHand,
-        quantityToBeReceived,
+        totalVendors: inventoryStats.totalVendors,
+        quantityInHand: inventoryStats.quantityInHand,
+        quantityToBeReceived: inventoryStats.quantityToBeReceived,
         recentSales,
         recentPurchases,
         purchaseOrderStats: purchaseOrderStatsData,
         recentPurchaseActivity: recentPurchaseActivityData?.activities || [],
-        recentSalesActivity: recentSalesActivityData?.activities || []
+        recentSalesActivity: recentSalesActivityData?.activities || [],
+        productMovementAnalytics: productMovementData?.success ? productMovementData.data : null
       };
 
       setDashboardStats(stats);
@@ -421,6 +457,132 @@ const Dashboard = () => {
             )}
           </div>
         </div>
+
+        {/* Product Movement Analytics */}
+        {dashboardStats?.productMovementAnalytics && (
+          <div className="mb-8">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Fast Moving Goods */}
+              <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-lg font-semibold text-gray-900">Fast Moving Goods</h3>
+                  <div className="flex items-center space-x-2">
+                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                    <span className="text-sm text-gray-500">Last 30 days</span>
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  {dashboardStats.productMovementAnalytics.fastMovingGoods.length > 0 ? (
+                    dashboardStats.productMovementAnalytics.fastMovingGoods.map((product, index) => (
+                      <div key={product.productName} className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-3">
+                            <div className="flex items-center justify-center w-8 h-8 bg-green-100 rounded-full text-green-700 font-bold text-sm">
+                              {index + 1}
+                            </div>
+                            <div>
+                              <h4 className="font-medium text-gray-900">{product.productName}</h4>
+                              <p className="text-sm text-gray-600">
+                                {product.totalQuantitySold} units sold • ₹{product.totalRevenue.toLocaleString()}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-lg font-bold text-green-600">
+                            {product.movementRate.toFixed(1)} <span className="text-sm font-normal">units/day</span>
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            Stock: {product.currentStock} units
+                          </div>
+                          {product.daysToStockOut && product.daysToStockOut <= 30 && (
+                            <div className="text-xs text-orange-600 font-medium">
+                              ⚠️ {product.daysToStockOut} days left
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-8 text-gray-500">
+                      <div className="text-4xl mb-2">📈</div>
+                      <p>No fast moving products in the last 30 days</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Slow Moving Goods */}
+              <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-lg font-semibold text-gray-900">Slow Moving Goods</h3>
+                  <div className="flex items-center space-x-2">
+                    <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                    <span className="text-sm text-gray-500">Needs attention</span>
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  {dashboardStats.productMovementAnalytics.slowMovingGoods.length > 0 ? (
+                    dashboardStats.productMovementAnalytics.slowMovingGoods.map((product, index) => (
+                      <div key={product.productName} className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-3">
+                            <div className="flex items-center justify-center w-8 h-8 bg-red-100 rounded-full text-red-700 font-bold text-sm">
+                              {index + 1}
+                            </div>
+                            <div>
+                              <h4 className="font-medium text-gray-900">{product.productName}</h4>
+                              <p className="text-sm text-gray-600">
+                                {product.totalQuantitySold > 0 
+                                  ? `${product.totalQuantitySold} units sold • ₹${product.totalRevenue.toLocaleString()}`
+                                  : 'No sales in last 30 days'
+                                }
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-lg font-bold text-red-600">
+                            {product.movementRate.toFixed(1)} <span className="text-sm font-normal">units/day</span>
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            Stock: {product.currentStock} units
+                          </div>
+                          {product.lastSaleDate ? (
+                            <div className="text-xs text-gray-400">
+                              Last sold: {new Date(product.lastSaleDate).toLocaleDateString()}
+                            </div>
+                          ) : (
+                            <div className="text-xs text-red-500">
+                              No recent sales
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-8 text-gray-500">
+                      <div className="text-4xl mb-2">📉</div>
+                      <p>No slow moving products identified</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            
+            {/* Analytics Summary */}
+            <div className="mt-4 bg-gray-50 rounded-lg p-4">
+              <div className="flex items-center justify-between text-sm text-gray-600">
+                <span>Analysis Period: {dashboardStats.productMovementAnalytics.period}</span>
+                <span>
+                  Products Analyzed: {dashboardStats.productMovementAnalytics.summary.totalProductsAnalyzed} 
+                  ({dashboardStats.productMovementAnalytics.summary.totalProductsWithSales} with sales, 
+                  {dashboardStats.productMovementAnalytics.summary.totalProductsWithoutSales} without sales)
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Bottom Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
