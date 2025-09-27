@@ -47,11 +47,10 @@ const Chat = () => {
     setIsLoading(true);
 
     try {
-      const response = await fetch('https://42aa5c50b0e1.ngrok-free.app/chat', {
+      const response = await fetch('http://localhost:5000/api/chat', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true'
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           message: userMessage.text

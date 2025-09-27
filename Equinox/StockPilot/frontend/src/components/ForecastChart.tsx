@@ -21,7 +21,7 @@ ChartJS.register(
 
 interface ForecastData {
   date: string;
-  predicted_sales: number;
+  predicted_price: number;
 }
 
 interface ForecastChartProps {
@@ -41,7 +41,7 @@ const ForecastChart: React.FC<ForecastChartProps> = ({ data, title = "Sales Fore
     datasets: [
       {
         label: 'Predicted Sales',
-        data: data.map(item => item.predicted_sales),
+        data: data.map(item => item.predicted_price),
         backgroundColor: 'rgba(59, 130, 246, 0.6)',
         borderColor: 'rgba(59, 130, 246, 1)',
         borderWidth: 2,

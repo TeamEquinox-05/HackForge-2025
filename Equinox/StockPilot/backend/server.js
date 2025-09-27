@@ -11,6 +11,7 @@ const purchaseOrderRoutes = require('./routes/purchaseOrderRoutes');
 const salesRoutes = require('./routes/salesRoutes');
 const forecastRoutes = require('./routes/forecastRoutes');
 const reportRoutes = require('./routes/reportRoutes');
+const chatRoutes = require('./routes/chatRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -33,6 +34,7 @@ app.use('/api/purchase-orders', purchaseOrderRoutes);
 app.use('/api/sales', salesRoutes);
 app.use('/api', forecastRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api', chatRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {
