@@ -1,0 +1,817 @@
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import DashboardLayout from '../components/DashboardLayout';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { FiPlus, FiEdit, FiTrash2, FiX, FiArrowLeft } from 'react-icons/fi';
+
+interface PurchaseItem {
+  id: string;
+  name: string;
+  batch: string;
+  expiryDate: string;
+  qty: number;
+  purchaseRate: number;
+  tax: number;
+  mrp: number;
+  discount: number;
+  amount: number;
+}
+
+interface Vendor {
+  _id: string;
+  vendor_name: string;
+  phone: string;
+  email: string;
+  address: string;
+  gst_number: string;
+  payment_terms: string;
+}
+
+interface Product {
+  _id: string;
+  product_name: string;
+  category: string;
+  hsn_code: string;
+  description: string;
+  isNewProduct: boolean;
+  latestDetails?: {
+    batch_number: string;
+    barcode: string;
+    mrp: number;
+    expiry_date?: string;
+    purchase_rate: number;
+    tax_percent: number;
+    discount_percent: number;
+  };
+}
+
+const Purchases = () => {
+  const navigate = useNavigate();
+  const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>([]);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [newProduct, setNewProduct] = useState({
+    name: '', batch: '', barcode: '', expiryDate: '', qty: 1, purchaseRate: 0, tax: 0, mrp: 0, discount: 0, amount: 0
+  });
+  const [editIndex, setEditIndex] = useState<number | null>(null);
+
+  // Refs for modal inputs
+  const nameRef = React.useRef<HTMLInputElement>(null);
+  const batchRef = React.useRef<HTMLInputElement>(null);
+  const expiryDateRef = React.useRef<HTMLInputElement>(null);
+  const qtyRef = React.useRef<HTMLInputElement>(null);
+  const rateRef = React.useRef<HTMLInputElement>(null);
+  const taxRef = React.useRef<HTMLInputElement>(null);
+  const mrpRef = React.useRef<HTMLInputElement>(null);
+  const discountRef = React.useRef<HTMLInputElement>(null);
+  
+  const [vendor, setVendor] = useState('');
+  const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [vendorSearchTerm, setVendorSearchTerm] = useState('');
+  const [showVendorDropdown, setShowVendorDropdown] = useState(false);
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [billNo, setBillNo] = useState('');
+  const [paymentStatus, setPaymentStatus] = useState('Pending');
+  
+  // Product autocomplete states
+  const [products, setProducts] = useState<Product[]>([]);
+  const [productSearchTerm, setProductSearchTerm] = useState('');
+  const [showProductDropdown, setShowProductDropdown] = useState(false);
+  const [isNewProduct, setIsNewProduct] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+
+  // Fetch vendors from backend
+  const fetchVendors = async () => {
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/vendors`);
+      if (response.ok) {
+        const data = await response.json();
+        setVendors(data);
+      }
+    } catch (error) {
+      console.error('Error fetching vendors:', error);
+    }
+  };
+
+  // Filter vendors based on search term
+  const filteredVendors = vendors.filter(v =>
+    v.vendor_name.toLowerCase().includes(vendorSearchTerm.toLowerCase())
+  );
+
+  // Handle vendor selection
+  const handleVendorSelect = (vendorName: string) => {
+    setVendor(vendorName);
+    setVendorSearchTerm(vendorName);
+    setShowVendorDropdown(false);
+  };
+
+  // Search products from backend
+  const searchProducts = async (searchTerm: string) => {
+    if (searchTerm.length < 2) {
+      setProducts([]);
+      return;
+    }
+    
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/products/search?search=${encodeURIComponent(searchTerm)}`);
+      if (response.ok) {
+        const data = await response.json();
+        setProducts(data);
+      }
+    } catch (error) {
+      console.error('Error searching products:', error);
+    }
+  };
+
+  // Handle product selection
+  const handleProductSelect = (product: Product) => {
+    setSelectedProduct(product);
+    setProductSearchTerm(product.product_name);
+    setShowProductDropdown(false);
+    setIsNewProduct(false);
+    
+    // Auto-fill with latest details if available
+    if (product.latestDetails) {
+      setNewProduct(prev => ({
+        ...prev,
+        name: product.product_name,
+        batch: product.latestDetails?.batch_number || '',
+        mrp: product.latestDetails?.mrp || 0,
+        purchaseRate: product.latestDetails?.purchase_rate || 0,
+        tax: product.latestDetails?.tax_percent || 0,
+        discount: product.latestDetails?.discount_percent || 0,
+        expiryDate: product.latestDetails?.expiry_date || ''
+      }));
+    }
+  };
+
+  // Handle new product creation
+  const handleNewProduct = () => {
+    setIsNewProduct(true);
+    setSelectedProduct(null);
+    setNewProduct(prev => ({
+      ...prev,
+      name: productSearchTerm,
+      batch: '',
+      barcode: '',
+      expiryDate: '',
+      purchaseRate: 0,
+      tax: 0,
+      mrp: 0,
+      discount: 0
+    }));
+    setShowProductDropdown(false);
+  };
+
+  // Remove item from purchase list
+  const removeItem = (index: number) => {
+    setPurchaseItems(items => items.filter((_, idx) => idx !== index));
+  };
+
+  // Calculate totals
+  const subtotal = purchaseItems.reduce((sum, item) => {
+    const base = item.qty * item.purchaseRate;
+    return sum + base;
+  }, 0);
+
+  const totalDiscount = purchaseItems.reduce((sum, item) => {
+    const base = item.qty * item.purchaseRate;
+    const discountAmount = base * (item.discount / 100);
+    return sum + discountAmount;
+  }, 0);
+
+  const totalTax = purchaseItems.reduce((sum, item) => {
+    const base = item.qty * item.purchaseRate;
+    const discountAmount = base * (item.discount / 100);
+    const taxAmount = (base - discountAmount) * (item.tax / 100);
+    return sum + taxAmount;
+  }, 0);
+
+  const finalTotal = subtotal - totalDiscount + totalTax;
+
+  // Initialize vendors on component mount
+  useEffect(() => {
+    fetchVendors();
+  }, []);
+
+  // Handle product search
+  useEffect(() => {
+    searchProducts(productSearchTerm);
+    setShowProductDropdown(productSearchTerm.length >= 2);
+  }, [productSearchTerm]);
+
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest('.vendor-autocomplete')) {
+        setShowVendorDropdown(false);
+      }
+      if (!target.closest('.product-autocomplete')) {
+        setShowProductDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  return (
+    <DashboardLayout>
+      <div className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <Button
+              variant="outline"
+              onClick={() => navigate('/purchases')}
+              className="mb-4 flex items-center space-x-2"
+            >
+              <FiArrowLeft className="h-4 w-4" />
+              <span>Back to Purchase Management</span>
+            </Button>
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Add New Purchase</h1>
+            <p className="text-gray-600 mt-1">Record a new purchase and update inventory</p>
+          </div>
+          <Button 
+            onClick={() => setModalOpen(true)}
+            className="bg-gray-900 hover:bg-gray-800 text-white flex items-center space-x-2"
+          >
+            <FiPlus className="h-4 w-4" />
+            <span>Add Product</span>
+          </Button>
+        </div>
+
+        {/* Purchase Details Form */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Purchase Information</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Vendor Selection */}
+              <div className="relative vendor-autocomplete">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Vendor Name</label>
+                <Input
+                  type="text"
+                  placeholder="Search or select vendor..."
+                  value={vendorSearchTerm}
+                  onChange={(e) => {
+                    setVendorSearchTerm(e.target.value);
+                    setShowVendorDropdown(true);
+                    if (!e.target.value) {
+                      setVendor('');
+                    }
+                  }}
+                  onFocus={() => setShowVendorDropdown(true)}
+                />
+                
+                {/* Vendor Dropdown */}
+                {showVendorDropdown && filteredVendors.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 z-10 bg-white border border-gray-200 rounded-md shadow-lg max-h-40 overflow-y-auto">
+                    {filteredVendors.map((v) => (
+                      <div
+                        key={v._id}
+                        className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                        onClick={() => handleVendorSelect(v.vendor_name)}
+                      >
+                        <div className="font-medium">{v.vendor_name}</div>
+                        <div className="text-gray-500 text-xs">{v.phone} • {v.email}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Bill Number */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Bill No</label>
+                <Input 
+                  type="text" 
+                  placeholder="Enter bill number" 
+                  value={billNo} 
+                  onChange={e => setBillNo(e.target.value)} 
+                />
+              </div>
+
+              {/* Date */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                <Input type="date" value={date} onChange={e => setDate(e.target.value)} />
+              </div>
+
+              {/* Payment Status */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Payment Status</label>
+                <select 
+                  value={paymentStatus} 
+                  onChange={(e) => setPaymentStatus(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-transparent"
+                >
+                  <option value="Pending">Pending</option>
+                  <option value="Paid">Paid</option>
+                  <option value="Partial">Partial</option>
+                </select>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Main Content Area */}
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+          {/* Purchase Items Table */}
+          <div className="xl:col-span-2">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle>Purchase Items ({purchaseItems.length})</CardTitle>
+                <Button 
+                  onClick={() => setModalOpen(true)}
+                  size="sm"
+                  className="bg-gray-900 hover:bg-gray-800 text-white"
+                >
+                  <FiPlus className="h-4 w-4 mr-1" />
+                  Add Item
+                </Button>
+              </CardHeader>
+              <CardContent>
+                {purchaseItems.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product</th>
+                          <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Qty</th>
+                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Rate</th>
+                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Tax</th>
+                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+                          <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-20">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {purchaseItems.map((item, idx) => (
+                          <tr key={item.id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <div className="text-sm font-medium text-gray-900">{item.name}</div>
+                              <div className="text-sm text-gray-500">Batch: {item.batch}</div>
+                              {item.expiryDate && (
+                                <div className="text-sm text-orange-600">Exp: {new Date(item.expiryDate).toLocaleDateString()}</div>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-center">
+                              <span className="text-sm font-medium text-gray-900">{item.qty}</span>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-right">
+                              <span className="text-sm text-gray-900">₹{item.purchaseRate.toFixed(2)}</span>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-right">
+                              <span className="text-sm text-gray-900">{item.tax}%</span>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-right">
+                              <span className="text-sm font-medium text-gray-900">₹{item.amount.toFixed(2)}</span>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-center">
+                              <div className="flex justify-center gap-2">
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm" 
+                                  className="h-8 w-8 p-0 text-gray-400 hover:text-blue-500"
+                                  onClick={() => {
+                                    setEditIndex(idx);
+                                    setNewProduct({
+                                      name: item.name,
+                                      batch: item.batch,
+                                      barcode: '',
+                                      expiryDate: item.expiryDate,
+                                      qty: item.qty,
+                                      purchaseRate: item.purchaseRate,
+                                      tax: item.tax,
+                                      mrp: item.mrp,
+                                      discount: item.discount,
+                                      amount: item.amount
+                                    });
+                                    setProductSearchTerm(item.name);
+                                    setIsNewProduct(false);
+                                    setModalOpen(true);
+                                  }}
+                                >
+                                  <FiEdit className="h-4 w-4" />
+                                </Button>
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm" 
+                                  className="h-8 w-8 p-0 text-gray-400 hover:text-red-500"
+                                  onClick={() => removeItem(idx)}
+                                >
+                                  <FiTrash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <div className="text-4xl mb-2">📦</div>
+                    <p className="text-gray-500 mb-2">No items added to purchase</p>
+                    <p className="text-sm text-gray-400 mb-4">Add products to start building your purchase order</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Purchase Summary Sidebar */}
+          <div className="xl:col-span-1">
+            <Card className="sticky top-6">
+              <CardHeader>
+                <CardTitle className="text-lg font-semibold text-gray-900">Purchase Summary</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-3 text-sm">
+                  {vendor && (
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Vendor</span>
+                        <span className="font-medium text-gray-900">{vendor}</span>
+                      </div>
+                      {billNo && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Bill No</span>
+                          <span className="font-medium text-gray-900">{billNo}</span>
+                        </div>
+                      )}
+                      <hr className="border-gray-200" />
+                    </>
+                  )}
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Total Items</span>
+                    <span className="font-medium text-gray-900">{purchaseItems.length}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Total Quantity</span>
+                    <span className="font-medium text-gray-900">{purchaseItems.reduce((sum, item) => sum + item.qty, 0)}</span>
+                  </div>
+                  <hr className="border-gray-200" />
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Subtotal</span>
+                    <span className="font-medium text-gray-900">₹{subtotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Total Discount</span>
+                    <span className="font-medium text-red-600">-₹{totalDiscount.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Total Tax</span>
+                    <span className="font-medium text-green-600">+₹{totalTax.toFixed(2)}</span>
+                  </div>
+                  <hr className="border-gray-200" />
+                  <div className="flex justify-between">
+                    <span className="text-gray-700 font-semibold">Final Amount</span>
+                    <span className="font-bold text-gray-900 text-lg">₹{finalTotal.toFixed(2)}</span>
+                  </div>
+                  <hr className="border-gray-200" />
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-700 font-medium">Payment Status</span>
+                    <span className={`px-3 py-1 text-sm font-medium rounded-full ${
+                      paymentStatus === 'Paid' ? 'bg-green-100 text-green-800' :
+                      paymentStatus === 'Partial' ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-red-100 text-red-800'
+                    }`}>
+                      {paymentStatus}
+                    </span>
+                  </div>
+                </div>
+                
+                <Button 
+                  className="w-full bg-gray-900 hover:bg-gray-800 text-white py-3 text-base font-semibold mt-6"
+                  onClick={async () => {
+                    if (!vendor || !billNo || purchaseItems.length === 0) {
+                      alert('Please select vendor, enter bill number, and add at least one item');
+                      return;
+                    }
+
+                    try {
+                      const purchaseData = {
+                        vendor_name: vendor,
+                        bill_no: billNo,
+                        purchase_date: date,
+                        items: purchaseItems.map(item => ({
+                          name: item.name,
+                          batch: item.batch,
+                          barcode: '',
+                          expiryDate: item.expiryDate,
+                          qty: item.qty,
+                          purchaseRate: item.purchaseRate,
+                          tax: item.tax,
+                          mrp: item.mrp,
+                          discount: item.discount
+                        })),
+                        payment_status: paymentStatus
+                      };
+
+                      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/purchases`, {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(purchaseData)
+                      });
+
+                      if (response.ok) {
+                        alert('Purchase completed successfully!');
+                        
+                        // Reset form
+                        setPurchaseItems([]);
+                        setVendor('');
+                        setVendorSearchTerm('');
+                        setBillNo('');
+                        setDate(new Date().toISOString().slice(0, 10));
+                        setPaymentStatus('Pending');
+                      } else {
+                        const error = await response.json();
+                        alert(`Error: ${error.message}`);
+                      }
+                    } catch (error) {
+                      console.error('Error completing purchase:', error);
+                      alert('Error completing purchase. Please try again.');
+                    }
+                  }}
+                  disabled={!vendor || !billNo || purchaseItems.length === 0}
+                >
+                  Complete Purchase
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+
+        {/* Add Product Modal */}
+        {modalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm bg-black/10 p-4">
+            <div className="bg-white rounded-xl shadow-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto relative">
+              <button 
+                className="absolute top-4 right-4 text-gray-400 hover:text-gray-700" 
+                onClick={() => setModalOpen(false)}
+              >
+                <FiX className="h-6 w-6" />
+              </button>
+              
+              <h2 className="text-xl font-bold mb-6 text-gray-900">Add Product</h2>
+              
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Product Name */}
+                  <div className="relative product-autocomplete sm:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Product Name {isNewProduct && <span className="text-green-600 text-xs">(Adding New Product)</span>}
+                    </label>
+                    <Input 
+                      ref={nameRef} 
+                      type="text" 
+                      placeholder="Search or enter product name..." 
+                      value={productSearchTerm || newProduct.name}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setProductSearchTerm(value);
+                        setNewProduct(p => ({ ...p, name: value }));
+                        searchProducts(value);
+                        setShowProductDropdown(true);
+                        setIsNewProduct(false);
+                      }}
+                      onFocus={() => {
+                        if (productSearchTerm) {
+                          searchProducts(productSearchTerm);
+                          setShowProductDropdown(true);
+                        }
+                      }}
+                    />
+                    
+                    {/* Product Autocomplete Dropdown */}
+                    {showProductDropdown && products.length > 0 && (
+                      <div className="absolute top-full left-0 right-0 z-20 bg-white border border-gray-200 rounded-md shadow-lg max-h-32 overflow-y-auto">
+                        {products.map((product) => (
+                          <div
+                            key={product._id}
+                            className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                            onClick={() => handleProductSelect(product)}
+                          >
+                            <div className="font-medium">{product.product_name}</div>
+                            <div className="text-gray-500 text-xs">
+                              {product.category} • 
+                              {product.latestDetails ? 
+                                ` Last: ₹${product.latestDetails.purchase_rate} • ${product.latestDetails.tax_percent}% tax` : 
+                                ' No previous purchase'
+                              }
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    
+                    {/* New product option */}
+                    {showProductDropdown && productSearchTerm && products.length === 0 && productSearchTerm.length >= 2 && (
+                      <div className="absolute top-full left-0 right-0 z-20 bg-white border border-gray-200 rounded-md shadow-lg">
+                        <div 
+                          className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                          onClick={handleNewProduct}
+                        >
+                          <div className="font-medium text-green-600">+ Add "{productSearchTerm}" as new product</div>
+                          <div className="text-gray-500 text-xs">This will create a new product in the system</div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Batch */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Batch</label>
+                    <Input 
+                      ref={batchRef} 
+                      type="text" 
+                      placeholder="Batch number" 
+                      value={newProduct.batch}
+                      onChange={e => setNewProduct(p => ({ ...p, batch: e.target.value }))}
+                    />
+                  </div>
+
+                  {/* Expiry Date */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Expiry Date</label>
+                    <Input 
+                      ref={expiryDateRef} 
+                      type="date" 
+                      value={newProduct.expiryDate}
+                      onChange={e => setNewProduct(p => ({ ...p, expiryDate: e.target.value }))}
+                    />
+                  </div>
+
+                  {/* Quantity */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+                    <Input 
+                      ref={qtyRef} 
+                      type="number" 
+                      min={1} 
+                      placeholder="Quantity" 
+                      value={newProduct.qty}
+                      onChange={e => setNewProduct(p => ({ ...p, qty: Number(e.target.value) }))}
+                    />
+                  </div>
+
+                  {/* Purchase Rate */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Purchase Rate</label>
+                    <Input 
+                      ref={rateRef} 
+                      type="number" 
+                      min={0} 
+                      step={0.01} 
+                      placeholder="Purchase rate" 
+                      value={newProduct.purchaseRate}
+                      onChange={e => setNewProduct(p => ({ ...p, purchaseRate: Number(e.target.value) }))}
+                    />
+                  </div>
+
+                  {/* Tax */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Tax (%)</label>
+                    <Input 
+                      ref={taxRef} 
+                      type="number" 
+                      min={0} 
+                      max={100} 
+                      step={0.01} 
+                      placeholder="Tax %" 
+                      value={newProduct.tax}
+                      onChange={e => setNewProduct(p => ({ ...p, tax: Number(e.target.value) }))}
+                    />
+                  </div>
+
+                  {/* MRP */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">MRP</label>
+                    <Input 
+                      ref={mrpRef} 
+                      type="number" 
+                      min={0} 
+                      step={0.01} 
+                      placeholder="MRP" 
+                      value={newProduct.mrp}
+                      onChange={e => setNewProduct(p => ({ ...p, mrp: Number(e.target.value) }))}
+                    />
+                  </div>
+
+                  {/* Discount */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Discount (%)</label>
+                    <Input 
+                      ref={discountRef} 
+                      type="number" 
+                      min={0} 
+                      max={100} 
+                      step={0.01} 
+                      placeholder="Discount %" 
+                      value={newProduct.discount}
+                      onChange={e => setNewProduct(p => ({ ...p, discount: Number(e.target.value) }))}
+                    />
+                  </div>
+                </div>
+
+                {/* Amount Display */}
+                <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-medium text-gray-700">Total Amount:</span>
+                    <span className="text-lg font-semibold text-gray-900">
+                      ₹{(() => {
+                        const base = newProduct.qty * newProduct.purchaseRate;
+                        const discountAmount = base * (newProduct.discount / 100);
+                        const taxAmount = (base - discountAmount) * (newProduct.tax / 100);
+                        return (base - discountAmount + taxAmount).toFixed(2);
+                      })()}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex flex-col sm:flex-row gap-3 mt-6">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setModalOpen(false)}
+                    className="flex-1"
+                  >
+                    Cancel
+                  </Button>
+                  <Button 
+                    className="flex-1 bg-gray-900 hover:bg-gray-800 text-white" 
+                    onClick={async () => {
+                      if (!newProduct.name || !newProduct.batch) {
+                        alert('Please enter product name and batch');
+                        return;
+                      }
+
+                      const base = newProduct.qty * newProduct.purchaseRate;
+                      const discountAmount = base * (newProduct.discount / 100);
+                      const taxAmount = (base - discountAmount) * (newProduct.tax / 100);
+                      const amount = base - discountAmount + taxAmount;
+                      
+                      // If it's a new product, create it in the backend first
+                      if (isNewProduct) {
+                        try {
+                          const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/products`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              product_name: newProduct.name,
+                              category: '',
+                              hsn_code: '',
+                              description: ''
+                            })
+                          });
+                          
+                          if (response.ok) {
+                            console.log('New product created in database');
+                          } else if (response.status === 409) {
+                            console.log('Product already exists');
+                          }
+                        } catch (error) {
+                          console.error('Error creating product:', error);
+                        }
+                      }
+                      
+                      if (editIndex !== null) {
+                        setPurchaseItems(items => items.map((item, idx) => idx === editIndex ? { ...item, ...newProduct, amount } : item));
+                      } else {
+                        setPurchaseItems(items => [
+                          ...items,
+                          {
+                            id: Date.now().toString(),
+                            ...newProduct,
+                            amount
+                          }
+                        ]);
+                      }
+                      
+                      setModalOpen(false);
+                      setNewProduct({ name: '', batch: '', barcode: '', expiryDate: '', qty: 1, purchaseRate: 0, tax: 0, mrp: 0, discount: 0, amount: 0 });
+                      setProductSearchTerm('');
+                      setIsNewProduct(false);
+                      setSelectedProduct(null);
+                      setEditIndex(null);
+                    }}
+                  >
+                    {editIndex !== null ? 'Update Product' : 'Add Product'}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </DashboardLayout>
+  );
+};
+
+export default Purchases;
