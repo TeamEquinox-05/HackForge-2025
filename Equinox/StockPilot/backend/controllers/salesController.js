@@ -229,11 +229,60 @@ const debugProducts = async (req, res) => {
   }
 };
 
+// Get recent sales activity for dashboard
+const getRecentSalesActivity = async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 5;
+    
+    // Get recent sales sorted by creation date (most recent first)
+    const recentSales = await Sale.find({})
+      .sort({ created_at: -1 })
+      .limit(limit);
+
+    // Format the sales activity data
+    const activities = recentSales.map(sale => {
+      const timeDiff = new Date() - new Date(sale.created_at);
+      const hours = Math.floor(timeDiff / (1000 * 60 * 60));
+      const days = Math.floor(hours / 24);
+      
+      let timeAgo;
+      if (days > 0) {
+        timeAgo = `${days} day${days > 1 ? 's' : ''} ago`;
+      } else if (hours > 0) {
+        timeAgo = `${hours} hour${hours > 1 ? 's' : ''} ago`;
+      } else {
+        timeAgo = 'Just now';
+      }
+
+      return {
+        id: sale._id,
+        type: 'completed',
+        title: `Sale #${sale.bill_no}`,
+        description: `Customer: ${sale.customer_name} • Payment: ${sale.payment_method}`,
+        icon: '💰',
+        iconColor: 'green',
+        timeAgo,
+        amount: sale.total,
+        customer: sale.customer_name,
+        payment_method: sale.payment_method,
+        bill_no: sale.bill_no,
+        date: sale.date
+      };
+    });
+
+    res.json({ activities });
+  } catch (error) {
+    console.error('Error fetching recent sales activity:', error);
+    res.status(500).json({ message: 'Error fetching recent sales activity', error: error.message });
+  }
+};
+
 module.exports = {
   searchProductsForSales,
   createSale,
   getAllSales,
   getSaleById,
   getNextBillNumber,
-  debugProducts
+  debugProducts,
+  getRecentSalesActivity
 };

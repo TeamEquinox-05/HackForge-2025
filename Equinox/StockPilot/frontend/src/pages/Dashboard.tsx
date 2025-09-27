@@ -19,10 +19,16 @@ interface Product {
 
 interface Sale {
   _id: string;
-  billNumber: string;
-  totalAmount: number;
-  items: any[];
+  billNumber?: string;
+  bill_no?: string;
+  totalAmount?: number;
+  total?: number;
+  items?: any[];
   date: string;
+  customer_name?: string;
+  customer_phone?: string;
+  customer_email?: string;
+  payment_method?: string;
 }
 
 interface Purchase {
@@ -48,6 +54,34 @@ interface Vendor {
   phone: string;
 }
 
+interface RecentPurchaseActivity {
+  id: string;
+  type: string;
+  title: string;
+  description: string;
+  icon: string;
+  iconColor: string;
+  timeAgo: string;
+  amount: number;
+  vendor: string;
+  payment_status: string;
+}
+
+interface RecentSalesActivity {
+  id: string;
+  type: string;
+  title: string;
+  description: string;
+  icon: string;
+  iconColor: string;
+  timeAgo: string;
+  amount: number;
+  customer: string;
+  payment_method: string;
+  bill_no: string;
+  date: string;
+}
+
 interface DashboardStats {
   totalProducts: number;
   lowStockItems: number;
@@ -59,6 +93,8 @@ interface DashboardStats {
   recentSales: Sale[];
   recentPurchases: Purchase[];
   purchaseOrderStats: any;
+  recentPurchaseActivity: RecentPurchaseActivity[];
+  recentSalesActivity: RecentSalesActivity[];
 }
 
 const Dashboard = () => {
@@ -121,7 +157,9 @@ const Dashboard = () => {
         purchaseOrdersResponse,
         vendorsResponse,
         purchaseStatsResponse,
-        purchaseOrderStatsResponse
+        purchaseOrderStatsResponse,
+        recentPurchaseActivityResponse,
+        recentSalesActivityResponse
       ] = await Promise.all([
         fetch('http://localhost:5000/api/products', { headers }),
         fetch('http://localhost:5000/api/sales', { headers }),
@@ -129,7 +167,9 @@ const Dashboard = () => {
         fetch('http://localhost:5000/api/purchase-orders', { headers }),
         fetch('http://localhost:5000/api/vendors', { headers }),
         fetch('http://localhost:5000/api/purchases/stats', { headers }),
-        fetch('http://localhost:5000/api/purchase-orders/stats', { headers })
+        fetch('http://localhost:5000/api/purchase-orders/stats', { headers }),
+        fetch('http://localhost:5000/api/purchases/recent-activity?limit=5', { headers }),
+        fetch('http://localhost:5000/api/sales/recent-activity?limit=5', { headers })
       ]);
 
       // Parse all responses
@@ -140,7 +180,9 @@ const Dashboard = () => {
         purchaseOrdersData,
         vendorsData,
         purchaseStatsData,
-        purchaseOrderStatsData
+        purchaseOrderStatsData,
+        recentPurchaseActivityData,
+        recentSalesActivityData
       ] = await Promise.all([
         productsResponse.json(),
         salesResponse.json(),
@@ -148,7 +190,9 @@ const Dashboard = () => {
         purchaseOrdersResponse.json(),
         vendorsResponse.json(),
         purchaseStatsResponse.json(),
-        purchaseOrderStatsResponse.json()
+        purchaseOrderStatsResponse.json(),
+        recentPurchaseActivityResponse.json(),
+        recentSalesActivityResponse.json()
       ]);
 
       // Calculate dashboard statistics
@@ -188,7 +232,9 @@ const Dashboard = () => {
         quantityToBeReceived,
         recentSales,
         recentPurchases,
-        purchaseOrderStats: purchaseOrderStatsData
+        purchaseOrderStats: purchaseOrderStatsData,
+        recentPurchaseActivity: recentPurchaseActivityData?.activities || [],
+        recentSalesActivity: recentSalesActivityData?.activities || []
       };
 
       setDashboardStats(stats);
@@ -378,31 +424,64 @@ const Dashboard = () => {
 
         {/* Bottom Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Recent Purchases */}
+          {/* Recent Purchased Products */}
           <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
-            <h3 className="text-lg font-semibold text-gray-900 mb-6">Recent Purchases</h3>
-            <div className="space-y-3">
-              {(dashboardStats?.recentPurchases?.length || 0) > 0 ? (
-                dashboardStats?.recentPurchases?.slice(0, 5).map((purchase: Purchase) => (
-                  <div key={purchase._id} className="flex justify-between items-center py-2 border-b border-gray-100">
-                    <div className="flex-1">
-                      <div className="text-sm font-medium text-gray-900">#{purchase.purchaseNumber}</div>
-                      <div className="text-xs text-gray-500">{new Date(purchase.date).toLocaleDateString()}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-sm font-bold text-gray-900">₹{purchase.totalAmount?.toLocaleString()}</div>
-                      <div className={`text-xs px-2 py-1 rounded-full ${
-                        purchase.paymentStatus === 'paid' ? 'bg-green-100 text-green-600' : 
-                        purchase.paymentStatus === 'pending' ? 'bg-yellow-100 text-yellow-600' : 
-                        'bg-red-100 text-red-600'
+            <h3 className="text-lg font-semibold text-gray-900 mb-6">Recent Purchased Products</h3>
+            <div className="space-y-4">
+              {(dashboardStats?.recentPurchaseActivity?.length || 0) > 0 ? (
+                dashboardStats?.recentPurchaseActivity?.map((activity: RecentPurchaseActivity) => (
+                  <div key={activity.id} className="flex items-start space-x-3 p-3 hover:bg-gray-50 rounded-lg transition-colors">
+                    <div className="flex-shrink-0">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg ${
+                        activity.iconColor === 'green' ? 'bg-green-100' :
+                        activity.iconColor === 'orange' ? 'bg-orange-100' :
+                        activity.iconColor === 'blue' ? 'bg-blue-100' : 'bg-gray-100'
                       }`}>
-                        {purchase.paymentStatus}
+                        {activity.icon}
+                      </div>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-medium text-gray-900 truncate">
+                          {activity.title}
+                        </p>
+                        <p className="text-xs text-gray-500 ml-2 flex-shrink-0">
+                          {activity.timeAgo}
+                        </p>
+                      </div>
+                      <p className="text-xs text-gray-600 mt-1">
+                        {activity.description}
+                      </p>
+                      <div className="flex items-center justify-between mt-2">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          activity.payment_status === 'Paid' ? 'bg-green-100 text-green-800' :
+                          activity.payment_status === 'Pending' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-blue-100 text-blue-800'
+                        }`}>
+                          {activity.payment_status}
+                        </span>
+                        <span className="text-sm font-semibold text-gray-900">
+                          ₹{activity.amount?.toLocaleString()}
+                        </span>
                       </div>
                     </div>
                   </div>
                 ))
               ) : (
-                <div className="text-center text-gray-500 py-4">No recent purchases</div>
+                <div className="text-center text-gray-500 py-8">
+                  <div className="text-4xl mb-2">📦</div>
+                  <div className="text-sm">No recent purchases</div>
+                </div>
+              )}
+              {(dashboardStats?.recentPurchaseActivity?.length || 0) > 0 && (
+                <div className="pt-4 border-t border-gray-200">
+                  <button 
+                    onClick={() => navigate('/purchases')}
+                    className="w-full text-center text-sm text-blue-600 hover:text-blue-800 font-medium"
+                  >
+                    View All Purchases →
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -410,22 +489,55 @@ const Dashboard = () => {
           {/* Recent Sales */}
           <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
             <h3 className="text-lg font-semibold text-gray-900 mb-6">Recent Sales</h3>
-            <div className="space-y-3">
-              {(dashboardStats?.recentSales?.length || 0) > 0 ? (
-                dashboardStats?.recentSales?.slice(0, 5).map((sale: Sale) => (
-                  <div key={sale._id} className="flex justify-between items-center py-2 border-b border-gray-100">
-                    <div className="flex-1">
-                      <div className="text-sm font-medium text-gray-900">#{sale.billNumber}</div>
-                      <div className="text-xs text-gray-500">{new Date(sale.date).toLocaleDateString()}</div>
+            <div className="space-y-4">
+              {(dashboardStats?.recentSalesActivity?.length || 0) > 0 ? (
+                dashboardStats?.recentSalesActivity?.map((activity: RecentSalesActivity) => (
+                  <div key={activity.id} className="flex items-start space-x-3 p-3 hover:bg-gray-50 rounded-lg transition-colors">
+                    <div className="flex-shrink-0">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg ${
+                        activity.iconColor === 'green' ? 'bg-green-100' : 'bg-gray-100'
+                      }`}>
+                        {activity.icon}
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <div className="text-sm font-bold text-green-600">₹{sale.totalAmount?.toLocaleString()}</div>
-                      <div className="text-xs text-gray-500">{sale.items?.length || 0} items</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-medium text-gray-900 truncate">
+                          {activity.title}
+                        </p>
+                        <p className="text-xs text-gray-500 ml-2 flex-shrink-0">
+                          {activity.timeAgo}
+                        </p>
+                      </div>
+                      <p className="text-xs text-gray-600 mt-1">
+                        {activity.description}
+                      </p>
+                      <div className="flex items-center justify-between mt-2">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          Completed
+                        </span>
+                        <span className="text-sm font-semibold text-green-600">
+                          ₹{activity.amount?.toLocaleString()}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 ))
               ) : (
-                <div className="text-center text-gray-500 py-4">No recent sales</div>
+                <div className="text-center text-gray-500 py-8">
+                  <div className="text-4xl mb-2">💰</div>
+                  <div className="text-sm">No recent sales</div>
+                </div>
+              )}
+              {(dashboardStats?.recentSalesActivity?.length || 0) > 0 && (
+                <div className="pt-4 border-t border-gray-200">
+                  <button 
+                    onClick={() => navigate('/sales')}
+                    className="w-full text-center text-sm text-green-600 hover:text-green-800 font-medium"
+                  >
+                    View All Sales →
+                  </button>
+                </div>
               )}
             </div>
           </div>
