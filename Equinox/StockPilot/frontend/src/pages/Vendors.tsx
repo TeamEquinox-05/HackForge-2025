@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -15,6 +16,7 @@ interface Vendor {
 }
 
 const Vendors = () => {
+  const navigate = useNavigate();
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -130,10 +132,17 @@ const Vendors = () => {
             <div className="flex-1 overflow-y-auto">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {filteredVendors.map((vendor) => (
-                  <Card key={vendor._id} className="hover:shadow-md transition-shadow">
+                  <Card 
+                    key={vendor._id} 
+                    className="hover:shadow-md transition-shadow cursor-pointer transform hover:scale-[1.02]"
+                    onClick={() => navigate(`/vendor-details/${vendor._id}`)}
+                  >
                     <CardHeader className="pb-3">
-                      <CardTitle className="text-lg font-semibold text-gray-900">
+                      <CardTitle className="text-lg font-semibold text-gray-900 flex items-center justify-between">
                         {vendor.vendor_name}
+                        <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
@@ -162,6 +171,9 @@ const Vendors = () => {
                           <span className="text-gray-500 w-16">Terms:</span>
                           <span className="text-gray-900">{vendor.payment_terms}</span>
                         </div>
+                      </div>
+                      <div className="mt-4 pt-3 border-t border-gray-100">
+                        <p className="text-xs text-blue-600 font-medium">Click to view purchase history →</p>
                       </div>
                     </CardContent>
                   </Card>

@@ -20,6 +20,7 @@ import PurchaseOrderDetails from './pages/PurchaseOrderDetails';
 import Chat from './pages/Chat';
 import Integrations from './pages/Integrations';
 import Reports from './pages/Reports';
+import VendorDetails from './pages/VendorDetails';
 
 const AppRouter = () => (
   <Router>
@@ -80,6 +81,11 @@ const AppRouter = () => (
         <Route path="/vendors" element={
           <ProtectedRoute>
             <Vendors />
+          </ProtectedRoute>
+        } />
+        <Route path="/vendor-details/:vendorId" element={
+          <ProtectedRoute>
+            <VendorDetails />
           </ProtectedRoute>
         } />
         <Route path="/chat" element={
